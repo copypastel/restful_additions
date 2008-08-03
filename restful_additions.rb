@@ -5,8 +5,8 @@ module RestfulAdditions
       modelBase.class_eval do
         def self.inherited(model)
           model.class_eval do
-            @@restful_keys = []
-            @@restful_assosiations = []
+            @restful_keys = []
+            @restful_associations = []
           end
         end
       end
@@ -14,65 +14,31 @@ module RestfulAdditions
     
     def restful_key(key)
       # I'm too nice to you guys => the error checking
-      @@restful_keys.push key unless @@restful_keys.include? key
+      @restful_keys.push key unless @restful_keys.include? key
     end
-    
+
+    # * Restful_find uses the paramaters from params that will influence the models that should be found
+    # * For instance if a post belongs_to a topic then visiting http://blog.com/topic/1/posts would yeild
+    # params to contain topic_id => 1 which can then be used to find all the posts for that topic
     def restful_find(mode, params = { },conditions = { })
-      for association in @@restful_associations
+      for association in @restful_associations
         conditions.merge!(association.in(params)) if(association.is_in?(params))
       end
-      #TODO clean this up...
-     # mode       = nil unless mode_or_params.class == Symbol
-     # params     = (mode.nil?) ? mode_or_params       : params_or_conditions
-     # conditions = (mode.nil?) ? params_or_conditions : conditions
-     # tmp = conditions.dup
-     # condtions = { }
-     # conditions[:first] = tmp.dup
-     # conditions[:second] = tmp.dup
-
-     # subset = nil #defined for scope
-      # Contains _id if a subset is being accessed e.g. topic_id
-      #TODO this only works if keys are strings... check bug
-     # if params.any? { |key,value| (subset = key).include?("_id") }
-     #   conditions[:first][subset] = params[subset]
-     #   #subset.sub("_id",'')
-     # end
-     # if params[:id]
-     #   self.restful_find_by_keys(mode,params,conditions)
-     # else
-     #   self.restful_find_by_conditions(mode,params,conditions)
-      #end
+      self.restful_find_by_keys(mode,params,conditions)
     end
-
-    # To fully understand the class read it like:
-    # Class_name method paramsters
-    # For isntance initialize is read like this
-    # RestfulAssociation initialize link name to class
-    class RestfulAssociation
-      ## To class not used temporarily since belongs_to is only one currently
-      def initialize(link_name,to_class)
-        @link_name = link_name
-      end
-
-      def in(params)
-        { @link_name => params[link_name] }
-      end
-
-      def is_in?(params)
-        params.any? { |link,value| link == @link_name}
-      end
-    end
-
+    
     def add_restful_association(macro,name,options,klass)
       case(macro)
       when :blongs_to:
-        @@restful_associations.push(Association.new(name,options[:class_name] || klass))
+          raise "BALLS"
+          @restful_associations.push(Association.new(name,options[:class_name] || klass))
       end
+
     end
     
     protected
     def restful_find_by_keys(mode,params,conditions)
-      @@restful_keys.each do |key|
+      @restful_keys.each do |key|
         item = self.send("find_by_#{key}",params["id"],:conditions =>conditions)
         return item unless item.nil? 
       end
@@ -84,6 +50,25 @@ module RestfulAdditions
     
     def restful_find_by_subset(mode,params,conditions)    
     end
+
+    # To fully understand the class read it like:
+    # Class_name method paramsters
+    # For isntance initialize is read like this
+    # RestfulAssociation initialize link name to class
+    class RestfulAssociation
+      ## To class not used temporarily since belongs_to is only one currently
+      def initialize(link_name,to_class)
+        @link_name = link_name
+      end
+      
+      def in(params)
+        { @link_name => params[link_name] }
+      end
+      
+      def is_in?(params)
+        params.any? { |link,value| link == @link_name}
+      end
+    end
   end
 end
 
@@ -92,26 +77,21 @@ module ActiveRecord
     extend RestfulAdditions::ModelBase
   end
 
-  module Associations
-    class AssociationProxy
-      def initialize(owner,reflection)
-        raise reflection.class.to_s
-      end
-    end
-    
-    module ActiveRecord
-      module Reflection # :nodoc:
-        module ClassMethods
-          def create_reflection(macro, name, options, active_record)
-            super #It sure is super!
-            @reflection.klass.add_restful_association(macro,name,options,@reflection.klass.to_s)
-          end
+  module Reflection # :nodoc:
+    module ClassMethods
+      alias old_create_reflection create_reflection
+      def create_reflection(macro,name,options,active_record)
+        reflec = old_create_reflection(macro,name,options,active_record)
+        begin
+          reflec.klass.add_restful_association(macro,name,options,reflec.klass.to_s)
+        rescue
         end
+        reflec
       end
     end
-    
   end
 end
+ 
 
 class ActionController::AbstractRequest
   
