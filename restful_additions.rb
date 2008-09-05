@@ -21,25 +21,35 @@ module RestfulAdditions
     # * For instance if a post belongs_to a topic then visiting http://blog.com/topic/1/posts would yeild
     # params to contain topic_id => 1 which can then be used to find all the posts for that topic
     def restful_find(mode, params = { },conditions = { })
+      rep = []
       for association in @restful_associations
         conditions.merge!(association.in(params)) if(association.is_in?(params))
+        rep.push(association.in(params).to_s)
       end
+
+      raise rep.to_s
       self.restful_find_by_keys(mode,params,conditions)
     end
     
-    def add_restful_association(macro,name,options,klass)
+    def add_restful_association(macro,name,options,class_name)
       case(macro)
-      when :blongs_to:
-          raise "BALLS"
-          @restful_associations.push(Association.new(name,options[:class_name] || klass))
+      when :belongs_to
+        raise name + " " + class_name
+#          raise options if name == "fable"
+          @restful_associations.push(RestfulAssociation.new(name,options[:class_name] || class_name))
+      when :has_many:
+          @restful_associations.push(RestfulAssociation.new(name,options[:class_name] || class_name))
+      else
+        puts "Warning... #{macro} not supported yet by restful additions"
       end
-
+      
     end
+
     
     protected
     def restful_find_by_keys(mode,params,conditions)
       @restful_keys.each do |key|
-        item = self.send("find_by_#{key}",params["id"],:conditions =>conditions)
+        item = self.send("find_by_#{key}",params["id"],conditions)
         return item unless item.nil? 
       end
       return nil
@@ -57,12 +67,13 @@ module RestfulAdditions
     # RestfulAssociation initialize link name to class
     class RestfulAssociation
       ## To class not used temporarily since belongs_to is only one currently
-      def initialize(link_name,to_class)
-        @link_name = link_name
+      def initialize(owner_class,child_class)
+        raise owner_class if( child_class == "Member")
+        @link_name = child_class.downcase + "_id"
       end
       
       def in(params)
-        { @link_name => params[link_name] }
+        { @link_name => params[@link_name] }
       end
       
       def is_in?(params)
@@ -83,8 +94,8 @@ module ActiveRecord
       def create_reflection(macro,name,options,active_record)
         reflec = old_create_reflection(macro,name,options,active_record)
         begin
-          reflec.klass.add_restful_association(macro,name,options,reflec.klass.to_s)
-        rescue
+          reflec.klass.add_restful_association(macro,reflec.klass.to_s,options,name.to_s)
+        rescue NameError
         end
         reflec
       end
@@ -102,7 +113,22 @@ class ActionController::AbstractRequest
   def records_with(conditions = { })
     extract_records(:all,conditions)
   end
-    
+
+  def records_for_page(page,args = { })
+
+    if page.class == Hash
+      args = page
+      page = nil
+    end 
+    page ||= self.parameters[:page] # paramaters[:page] returns flase if nil
+    page = nil if not page
+
+    args.merge!(:page => page)
+
+    class_const = extract_record_class()
+    class_const.paginate(args)
+  end
+  
   def record
     extract_records(:first)
   end
@@ -119,8 +145,12 @@ class ActionController::AbstractRequest
 private
   #Returns single
   def extract_records(mode = :first, conditions = { })
+    class_const = extract_record_class()
+    class_const.restful_find(mode, self.parameters,:conditions => conditions)
+  end
+  
+  def extract_record_class
     class_name = self.parameters[:controller].singularize.camelize
-    class_const = class_name.constantize  
-    class_const.restful_find(:mode, self.paramaters,:conditions => conditions)
-  end  
+    class_name.constantize  
+  end
 end
