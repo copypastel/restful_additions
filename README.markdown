@@ -40,7 +40,7 @@ List of all of my posts paginated
 
 * http://copypastel.com/members/1/posts/1
 
----
+Display of my post
 How it does it...
 -----------------
 
